@@ -29,7 +29,7 @@ class TestRecordCLI:
             text=True
         )
         assert result.returncode == 0
-        assert "Record execution for debugging and replay" in result.stdout
+        assert "Record program execution to session file" in result.stdout
 
     def test_record_run_help(self):
         """Test that record run subcommand shows help."""
@@ -39,7 +39,7 @@ class TestRecordCLI:
             text=True
         )
         assert result.returncode == 0
-        assert "Record program execution to session file" in result.stdout
+        assert "The .knda file to run and record" in result.stdout
         assert "--output" in result.stdout
 
     @pytest.fixture
@@ -51,7 +51,7 @@ class TestRecordCLI:
 ~kinda int x = 42
 ~sorta print(f"x is kinda {x}")
 
-~sometimes x > 40:
+~sometimes(x > 40):
     ~sorta print("x is pretty big!")
 
 ~kinda int y = x + 1
@@ -74,8 +74,8 @@ class TestRecordCLI:
             
             # Should complete successfully
             assert result.returncode == 0
-            assert "Starting recording session" in result.stderr
-            assert "Session saved to:" in result.stderr
+            assert "Starting recording session" in result.stdout
+            assert "Session saved to:" in result.stdout
             
             # Session file should exist
             assert session_file.exists()
@@ -112,8 +112,8 @@ class TestRecordCLI:
             
             assert result.returncode == 0
             
-            # Default output should be <input>.session.json
-            expected_output = Path(temp_dir) / "test_program.session.json"
+            # Default output should be <input>.session.json  
+            expected_output = Path(temp_dir) / "test_program.py.session.json"
             assert expected_output.exists()
 
     def test_record_run_with_personality_options(self, simple_kinda_program):
@@ -150,7 +150,7 @@ class TestRecordCLI:
         ], capture_output=True, text=True)
         
         assert result.returncode == 1
-        assert "Can't find" in result.stderr
+        assert "Can't find" in result.stdout
 
     @pytest.fixture
     def program_with_runtime_error(self):
@@ -180,9 +180,9 @@ result = 10 / 0
             
             # Should indicate runtime error but still save recording
             assert result.returncode == 0  # We handle the error gracefully
-            assert "Runtime error during recording" in result.stderr
-            assert "Recording captured up to the point of failure" in result.stderr
-            assert "Session saved to:" in result.stderr
+            assert "Runtime error during recording" in result.stdout
+            assert "Recording captured up to the point of failure" in result.stdout
+            assert "Session saved to:" in result.stdout
             
             # Session file should still exist
             assert session_file.exists()
@@ -222,13 +222,13 @@ result = 10 / 0
 ~kinda float factor = 2.5
 
 for i in range(3):
-    ~sometimes i % 2 == 0:
+    ~sometimes(i % 2 == 0):
         ~sorta print(f"Even iteration {i}")
         ~kinda int val = base * i
-        ~maybe val > 15:
+        ~maybe(val > 15):
             ~sorta print(f"val is big: {val}")
     
-    ~rarely True:
+    ~rarely(True):
         ~sorta print("Rare event triggered!")
     
     # Test ish comparisons
