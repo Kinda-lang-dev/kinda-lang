@@ -3,7 +3,7 @@
 """
 Integration tests for the record/replay CLI commands.
 
-These tests verify that the CLI interface properly integrates with the 
+These tests verify that the CLI interface properly integrates with the
 recording system and produces valid session files when running kinda programs.
 """
 
@@ -24,9 +24,7 @@ class TestRecordCLI:
     def test_record_help(self):
         """Test that record command shows help."""
         result = subprocess.run(
-            [sys.executable, "-m", "kinda.cli", "record", "--help"],
-            capture_output=True,
-            text=True
+            [sys.executable, "-m", "kinda.cli", "record", "--help"], capture_output=True, text=True
         )
         assert result.returncode == 0
         assert "Record program execution to session file" in result.stdout
@@ -36,7 +34,7 @@ class TestRecordCLI:
         result = subprocess.run(
             [sys.executable, "-m", "kinda.cli", "record", "run", "--help"],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0
         assert "The .knda file to run and record" in result.stdout
@@ -45,8 +43,9 @@ class TestRecordCLI:
     @pytest.fixture
     def simple_kinda_program(self):
         """Create a simple .knda test file."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py.knda', delete=False) as f:
-            f.write("""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py.knda", delete=False) as f:
+            f.write(
+                """
 # Simple kinda program for testing recording
 ~kinda int x = 42
 ~sorta print(f"x is kinda {x}")
@@ -56,42 +55,54 @@ class TestRecordCLI:
 
 ~kinda int y = x + 1
 ~sorta print(f"y is around {y}")
-""")
+"""
+            )
             return Path(f.name)
 
     def test_record_run_basic_functionality(self, simple_kinda_program):
         """Test basic 'kinda record run' functionality."""
         with tempfile.TemporaryDirectory() as temp_dir:
             session_file = Path(temp_dir) / "test_session.json"
-            
+
             # Run record command
-            result = subprocess.run([
-                sys.executable, "-m", "kinda.cli", 
-                "record", "run", str(simple_kinda_program),
-                "--output", str(session_file),
-                "--seed", "12345"  # For reproducible testing
-            ], capture_output=True, text=True, cwd=temp_dir)
-            
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kinda.cli",
+                    "record",
+                    "run",
+                    str(simple_kinda_program),
+                    "--output",
+                    str(session_file),
+                    "--seed",
+                    "12345",  # For reproducible testing
+                ],
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+            )
+
             # Should complete successfully
             assert result.returncode == 0
             assert "Starting recording session" in result.stdout
             assert "Session saved to:" in result.stdout
-            
+
             # Session file should exist
             assert session_file.exists()
-            
+
             # Load and validate session file
-            with open(session_file, 'r') as f:
+            with open(session_file, "r") as f:
                 session_data = json.load(f)
-            
+
             assert session_data["input_file"] == str(simple_kinda_program)
             assert session_data["session_id"] is not None
             assert session_data["total_calls"] > 0
             assert len(session_data["rng_calls"]) > 0
-            
+
             # Should have recorded some construct usage
             assert "construct_usage" in session_data
-            
+
             # Verify session metadata
             assert session_data["kinda_version"] == "0.4.1"
             assert session_data["initial_personality"]["seed"] == 12345
@@ -103,16 +114,26 @@ class TestRecordCLI:
             # Copy the program to temp directory
             temp_program = Path(temp_dir) / "test_program.py.knda"
             temp_program.write_text(simple_kinda_program.read_text())
-            
-            result = subprocess.run([
-                sys.executable, "-m", "kinda.cli",
-                "record", "run", str(temp_program),
-                "--seed", "99999"
-            ], capture_output=True, text=True, cwd=temp_dir)
-            
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kinda.cli",
+                    "record",
+                    "run",
+                    str(temp_program),
+                    "--seed",
+                    "99999",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+            )
+
             assert result.returncode == 0
-            
-            # Default output should be <input>.session.json  
+
+            # Default output should be <input>.session.json
             expected_output = Path(temp_dir) / "test_program.py.session.json"
             assert expected_output.exists()
 
@@ -120,22 +141,35 @@ class TestRecordCLI:
         """Test recording with different personality options."""
         with tempfile.TemporaryDirectory() as temp_dir:
             session_file = Path(temp_dir) / "chaotic_session.json"
-            
-            result = subprocess.run([
-                sys.executable, "-m", "kinda.cli",
-                "record", "run", str(simple_kinda_program),
-                "--output", str(session_file),
-                "--mood", "chaotic",
-                "--chaos-level", "9",
-                "--seed", "42"
-            ], capture_output=True, text=True, cwd=temp_dir)
-            
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kinda.cli",
+                    "record",
+                    "run",
+                    str(simple_kinda_program),
+                    "--output",
+                    str(session_file),
+                    "--mood",
+                    "chaotic",
+                    "--chaos-level",
+                    "9",
+                    "--seed",
+                    "42",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+            )
+
             assert result.returncode == 0
             assert session_file.exists()
-            
-            with open(session_file, 'r') as f:
+
+            with open(session_file, "r") as f:
                 session_data = json.load(f)
-            
+
             # Check that personality settings were recorded
             personality = session_data["initial_personality"]
             assert personality["mood"] == "chaotic"
@@ -144,52 +178,66 @@ class TestRecordCLI:
 
     def test_record_run_nonexistent_file(self):
         """Test recording a file that doesn't exist."""
-        result = subprocess.run([
-            sys.executable, "-m", "kinda.cli",
-            "record", "run", "nonexistent.knda"
-        ], capture_output=True, text=True)
-        
+        result = subprocess.run(
+            [sys.executable, "-m", "kinda.cli", "record", "run", "nonexistent.knda"],
+            capture_output=True,
+            text=True,
+        )
+
         assert result.returncode == 1
         assert "Can't find" in result.stdout
 
     @pytest.fixture
     def program_with_runtime_error(self):
         """Create a .knda program that has a runtime error."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py.knda', delete=False) as f:
-            f.write("""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py.knda", delete=False) as f:
+            f.write(
+                """
 # Program that will crash during execution
 ~kinda int x = 42
 ~sorta print(f"x is {x}")
 
 # This will cause a runtime error
 result = 10 / 0
-""")
+"""
+            )
             return Path(f.name)
 
     def test_record_run_with_runtime_error(self, program_with_runtime_error):
         """Test that recording continues even when program crashes."""
         with tempfile.TemporaryDirectory() as temp_dir:
             session_file = Path(temp_dir) / "error_session.json"
-            
-            result = subprocess.run([
-                sys.executable, "-m", "kinda.cli",
-                "record", "run", str(program_with_runtime_error),
-                "--output", str(session_file),
-                "--seed", "123"
-            ], capture_output=True, text=True, cwd=temp_dir)
-            
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kinda.cli",
+                    "record",
+                    "run",
+                    str(program_with_runtime_error),
+                    "--output",
+                    str(session_file),
+                    "--seed",
+                    "123",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+            )
+
             # Should indicate runtime error but still save recording
             assert result.returncode == 0  # We handle the error gracefully
             assert "Runtime error during recording" in result.stdout
             assert "Recording captured up to the point of failure" in result.stdout
             assert "Session saved to:" in result.stdout
-            
+
             # Session file should still exist
             assert session_file.exists()
-            
-            with open(session_file, 'r') as f:
+
+            with open(session_file, "r") as f:
                 session_data = json.load(f)
-            
+
             # Should have captured some calls before the crash
             assert session_data["total_calls"] >= 0
             assert session_data["session_id"] is not None
@@ -198,22 +246,29 @@ result = 10 / 0
         """Test that CLI main function can be called programmatically."""
         with tempfile.TemporaryDirectory() as temp_dir:
             session_file = Path(temp_dir) / "api_test.json"
-            
+
             # Test calling cli_main directly
-            exit_code = cli_main([
-                "record", "run", str(simple_kinda_program),
-                "--output", str(session_file),
-                "--seed", "777"
-            ])
-            
+            exit_code = cli_main(
+                [
+                    "record",
+                    "run",
+                    str(simple_kinda_program),
+                    "--output",
+                    str(session_file),
+                    "--seed",
+                    "777",
+                ]
+            )
+
             assert exit_code == 0
             assert session_file.exists()
 
-    @pytest.fixture 
+    @pytest.fixture
     def complex_kinda_program(self):
         """Create a more complex .knda program for comprehensive testing."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py.knda', delete=False) as f:
-            f.write("""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py.knda", delete=False) as f:
+            f.write(
+                """
 # Complex kinda program with multiple constructs
 ~sorta print("Starting complex test...")
 
@@ -237,39 +292,51 @@ for i in range(3):
         ~sorta print(f"test_val is ish 5.0: {test_val}")
 
 ~sorta print("Complex test complete!")
-""")
+"""
+            )
             return Path(f.name)
 
     def test_record_complex_program(self, complex_kinda_program):
         """Test recording a complex program with multiple constructs."""
         with tempfile.TemporaryDirectory() as temp_dir:
             session_file = Path(temp_dir) / "complex_session.json"
-            
-            result = subprocess.run([
-                sys.executable, "-m", "kinda.cli",
-                "record", "run", str(complex_kinda_program),
-                "--output", str(session_file),
-                "--seed", "555"
-            ], capture_output=True, text=True, cwd=temp_dir)
-            
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "kinda.cli",
+                    "record",
+                    "run",
+                    str(complex_kinda_program),
+                    "--output",
+                    str(session_file),
+                    "--seed",
+                    "555",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=temp_dir,
+            )
+
             assert result.returncode == 0
             assert session_file.exists()
-            
-            with open(session_file, 'r') as f:
+
+            with open(session_file, "r") as f:
                 session_data = json.load(f)
-            
+
             # Should have recorded many RNG calls
             assert session_data["total_calls"] >= 10
-            
+
             # Should have recorded usage of different constructs
             construct_usage = session_data.get("construct_usage", {})
             # Complex program should trigger multiple construct types
             assert len(construct_usage) >= 1
-            
+
             # Verify RNG call details
             rng_calls = session_data["rng_calls"]
             assert len(rng_calls) > 0
-            
+
             # Check that calls have proper structure
             for call in rng_calls[:3]:  # Check first few calls
                 assert "call_id" in call

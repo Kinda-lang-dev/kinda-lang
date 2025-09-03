@@ -3,8 +3,8 @@
 """
 Kinda-Lang Record/Replay System for Debugging and Testing
 
-This module provides comprehensive record/replay functionality for debugging 
-kinda programs by capturing PersonalityContext RNG calls and enabling 
+This module provides comprehensive record/replay functionality for debugging
+kinda programs by capturing PersonalityContext RNG calls and enabling
 exact replay of fuzzy execution sequences.
 """
 
@@ -21,23 +21,23 @@ import traceback
 @dataclass
 class RNGCall:
     """Represents a single RNG method call with full context."""
-    
+
     # Call identification
     call_id: str  # Unique identifier for this call
     timestamp: float  # When this call was made
     sequence_number: int  # Sequential order of calls
-    
+
     # Method information
     method_name: str  # e.g., "random", "randint", "uniform"
     args: List[Any]  # Arguments passed to the method
     kwargs: Dict[str, Any]  # Keyword arguments (usually empty for RNG)
     result: Any  # The value returned by the method
-    
+
     # Execution context
     thread_id: int  # Thread that made this call
     stack_trace: List[str]  # Call stack at time of RNG call
     personality_state: Dict[str, Any]  # PersonalityContext state snapshot
-    
+
     # Fuzzy construct context (if available)
     construct_type: Optional[str] = None  # e.g., "sometimes", "kinda_int"
     construct_location: Optional[str] = None  # Source location info
@@ -47,7 +47,7 @@ class RNGCall:
 @dataclass
 class RecordingSession:
     """Complete recording session with metadata and call sequence."""
-    
+
     # Session metadata (required fields first)
     session_id: str
     start_time: float
@@ -60,14 +60,14 @@ class RecordingSession:
     rng_calls: List[RNGCall]
     construct_usage: Dict[str, int]
     decision_points: List[Dict[str, Any]]
-    
+
     # Optional fields with defaults
     end_time: Optional[float] = None
     duration: Optional[float] = None
     total_calls: int = 0
     notes: str = ""
     tags: List[str] = None
-    
+
     def __post_init__(self):
         if self.tags is None:
             self.tags = []
@@ -76,45 +76,45 @@ class RecordingSession:
 class ExecutionRecorder:
     """
     Records PersonalityContext RNG calls for exact replay debugging.
-    
+
     This class hooks into the PersonalityContext's random number generation
     to capture every decision point in a kinda program's execution.
     """
-    
+
     def __init__(self, output_file: Optional[Path] = None):
         self.output_file = output_file
         self.recording = False
         self.session: Optional[RecordingSession] = None
         self._sequence_counter = 0
         self._lock = threading.Lock()  # For thread safety
-        
+
         # Hook tracking
         self._original_methods: Dict[str, Any] = {}
         self._hooked = False
-    
+
     def start_recording(self, input_file: str, command_args: List[str]) -> str:
         """
         Start recording a new session.
-        
+
         Args:
             input_file: The .knda file being executed
             command_args: Command line arguments used
-            
+
         Returns:
             session_id: Unique identifier for this recording session
         """
         if self.recording:
             raise RuntimeError("Recording already in progress. Stop current session first.")
-        
+
         # Import here to avoid circular import
         from kinda.personality import PersonalityContext
         import sys
         import platform
-        
+
         with self._lock:
             session_id = str(uuid4())
             current_time = time.time()
-            
+
             # Get current personality state
             personality = PersonalityContext.get_instance()
             personality_state = {
@@ -126,7 +126,7 @@ class ExecutionRecorder:
                 "execution_count": personality.execution_count,
                 "instability_level": personality.instability_level,
             }
-            
+
             self.session = RecordingSession(
                 session_id=session_id,
                 start_time=current_time,
@@ -138,94 +138,94 @@ class ExecutionRecorder:
                 initial_personality=personality_state,
                 rng_calls=[],
                 construct_usage={},
-                decision_points=[]
+                decision_points=[],
             )
-            
+
             # Install hooks
             self._install_hooks()
-            
+
             self.recording = True
             self._sequence_counter = 0
-            
+
             return session_id
-    
+
     def stop_recording(self) -> RecordingSession:
         """
         Stop recording and finalize the session.
-        
+
         Returns:
             The completed recording session
         """
         if not self.recording:
             raise RuntimeError("No recording session in progress")
-        
+
         with self._lock:
             current_time = time.time()
-            
+
             # Finalize session
             self.session.end_time = current_time
             self.session.duration = current_time - self.session.start_time
             self.session.total_calls = len(self.session.rng_calls)
-            
+
             # Remove hooks
             self._remove_hooks()
-            
+
             self.recording = False
-            
+
             # Save to file if specified
             if self.output_file:
                 self.save_session(self.session, self.output_file)
-            
+
             return self.session
-    
+
     def _install_hooks(self) -> None:
         """Install RNG method hooks in PersonalityContext."""
         if self._hooked:
             return
-            
+
         from kinda.personality import PersonalityContext
-        
+
         # Get the instance to hook
         personality = PersonalityContext.get_instance()
-        
+
         # Hook the main RNG methods
-        rng_methods = ['random', 'randint', 'uniform', 'choice', 'gauss']
-        
+        rng_methods = ["random", "randint", "uniform", "choice", "gauss"]
+
         for method_name in rng_methods:
             if hasattr(personality, method_name):
                 original_method = getattr(personality, method_name)
                 self._original_methods[method_name] = original_method
-                
+
                 # Create hooked version
                 hooked_method = self._create_hook(method_name, original_method)
                 setattr(personality, method_name, hooked_method)
-        
+
         self._hooked = True
-    
+
     def _remove_hooks(self) -> None:
         """Remove RNG method hooks from PersonalityContext."""
         if not self._hooked:
             return
-            
+
         from kinda.personality import PersonalityContext
-        
+
         # Get the instance to unhook
         personality = PersonalityContext.get_instance()
-        
+
         # Restore original methods
         for method_name, original_method in self._original_methods.items():
             setattr(personality, method_name, original_method)
-        
+
         self._original_methods.clear()
         self._hooked = False
-    
+
     def _create_hook(self, method_name: str, original_method):
         """Create a hooked version of an RNG method that records calls."""
-        
+
         def hooked_method(*args, **kwargs):
             # Call original method first
             result = original_method(*args, **kwargs)
-            
+
             # Record the call if we're actively recording
             if self.recording and self.session:
                 try:
@@ -234,31 +234,32 @@ class ExecutionRecorder:
                     # Don't let recording failures break the program
                     # TODO: Add optional debug logging here
                     pass
-            
+
             return result
-            
+
         return hooked_method
-    
+
     def _record_rng_call(self, method_name: str, args: tuple, kwargs: dict, result: Any) -> None:
         """Record a single RNG call with full context."""
-        
+
         with self._lock:
             current_time = time.time()
             self._sequence_counter += 1
-            
+
             # Get current thread info
             current_thread = threading.current_thread()
             thread_id = current_thread.ident or 0
-            
+
             # Capture stack trace (excluding this recording code)
             stack = traceback.extract_stack()[:-2]  # Skip this method and _create_hook
             stack_trace = [
                 f"{frame.filename}:{frame.lineno} in {frame.name}"
                 for frame in stack[-10:]  # Keep last 10 frames
             ]
-            
+
             # Get current personality state snapshot
             from kinda.personality import PersonalityContext
+
             personality = PersonalityContext.get_instance()
             personality_state = {
                 "chaos_level": personality.chaos_level,
@@ -266,10 +267,10 @@ class ExecutionRecorder:
                 "execution_count": personality.execution_count,
                 "instability_level": personality.instability_level,
             }
-            
+
             # Try to infer construct context from stack trace
             construct_info = self._infer_construct_context(stack_trace)
-            
+
             # Create RNG call record
             call_record = RNGCall(
                 call_id=str(uuid4()),
@@ -284,134 +285,131 @@ class ExecutionRecorder:
                 personality_state=personality_state,
                 construct_type=construct_info.get("type"),
                 construct_location=construct_info.get("location"),
-                decision_impact=construct_info.get("impact")
+                decision_impact=construct_info.get("impact"),
             )
-            
+
             # Add to session
             self.session.rng_calls.append(call_record)
-            
+
             # Update construct usage stats
             if call_record.construct_type:
-                self.session.construct_usage[call_record.construct_type] = \
+                self.session.construct_usage[call_record.construct_type] = (
                     self.session.construct_usage.get(call_record.construct_type, 0) + 1
-    
+                )
+
     def _infer_construct_context(self, stack_trace: List[str]) -> Dict[str, Optional[str]]:
         """
         Infer fuzzy construct context from stack trace.
-        
+
         This analyzes the call stack to determine what kinda construct
         triggered this RNG call.
         """
-        
+
         # Look for kinda runtime patterns in stack trace
         for frame in reversed(stack_trace):  # Start from most recent
             frame_lower = frame.lower()
-            
+
             # Check for construct patterns
             if "sometimes" in frame_lower:
                 return {
                     "type": "sometimes",
                     "location": frame,
-                    "impact": "conditional execution (50% probability)"
+                    "impact": "conditional execution (50% probability)",
                 }
             elif "maybe" in frame_lower:
                 return {
-                    "type": "maybe", 
+                    "type": "maybe",
                     "location": frame,
-                    "impact": "conditional execution (60% probability)"
+                    "impact": "conditional execution (60% probability)",
                 }
             elif "probably" in frame_lower:
                 return {
                     "type": "probably",
-                    "location": frame, 
-                    "impact": "conditional execution (70% probability)"
+                    "location": frame,
+                    "impact": "conditional execution (70% probability)",
                 }
             elif "rarely" in frame_lower:
                 return {
                     "type": "rarely",
                     "location": frame,
-                    "impact": "conditional execution (15% probability)"
+                    "impact": "conditional execution (15% probability)",
                 }
             elif "kinda_int" in frame_lower or "fuzzy_int" in frame_lower:
                 return {
                     "type": "kinda_int",
                     "location": frame,
-                    "impact": "integer fuzz (±1 variance)"
+                    "impact": "integer fuzz (±1 variance)",
                 }
             elif "kinda_float" in frame_lower or "fuzzy_float" in frame_lower:
                 return {
                     "type": "kinda_float",
                     "location": frame,
-                    "impact": "float drift (±0.5 variance)"
+                    "impact": "float drift (±0.5 variance)",
                 }
             elif "ish" in frame_lower:
-                return {
-                    "type": "ish",
-                    "location": frame,
-                    "impact": "fuzzy comparison or value"
-                }
+                return {"type": "ish", "location": frame, "impact": "fuzzy comparison or value"}
             elif "sorta_print" in frame_lower:
                 return {
                     "type": "sorta_print",
                     "location": frame,
-                    "impact": "probabilistic output (80% chance)"
+                    "impact": "probabilistic output (80% chance)",
                 }
             elif "kinda_binary" in frame_lower:
                 return {
                     "type": "kinda_binary",
                     "location": frame,
-                    "impact": "ternary logic (yes/no/maybe)"
+                    "impact": "ternary logic (yes/no/maybe)",
                 }
             elif "chaos_probability" in frame_lower:
                 return {
                     "type": "personality_chaos",
                     "location": frame,
-                    "impact": "personality-adjusted probability"
+                    "impact": "personality-adjusted probability",
                 }
-        
+
         # Default case - direct personality RNG call
         return {
             "type": "direct_rng",
             "location": stack_trace[-1] if stack_trace else "unknown",
-            "impact": "direct random number generation"
+            "impact": "direct random number generation",
         }
-    
+
     @staticmethod
     def save_session(session: RecordingSession, output_file: Path) -> None:
         """Save a recording session to a JSON file."""
-        
+
         # Convert session to dictionary for JSON serialization
         session_dict = asdict(session)
-        
+
         # Ensure output directory exists
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Save with pretty formatting for readability
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(session_dict, f, indent=2, ensure_ascii=False)
-    
+
     @staticmethod
     def load_session(input_file: Path) -> RecordingSession:
         """Load a recording session from a JSON file."""
-        
-        with open(input_file, 'r', encoding='utf-8') as f:
+
+        with open(input_file, "r", encoding="utf-8") as f:
             session_dict = json.load(f)
-        
+
         # Convert RNG calls back to RNGCall objects
-        rng_calls = [RNGCall(**call_dict) for call_dict in session_dict.get('rng_calls', [])]
-        session_dict['rng_calls'] = rng_calls
-        
+        rng_calls = [RNGCall(**call_dict) for call_dict in session_dict.get("rng_calls", [])]
+        session_dict["rng_calls"] = rng_calls
+
         return RecordingSession(**session_dict)
-    
+
     def get_session_summary(self) -> Dict[str, Any]:
         """Get a summary of the current recording session."""
-        
+
         if not self.session:
             return {"status": "no_session", "message": "No recording session active"}
-        
+
         current_time = time.time()
         duration = current_time - self.session.start_time
-        
+
         return {
             "status": "active" if self.recording else "stopped",
             "session_id": self.session.session_id,
@@ -435,15 +433,17 @@ def get_recorder() -> ExecutionRecorder:
     return _global_recorder
 
 
-def start_recording(input_file: str, command_args: List[str], output_file: Optional[Path] = None) -> str:
+def start_recording(
+    input_file: str, command_args: List[str], output_file: Optional[Path] = None
+) -> str:
     """
     Convenience function to start recording with the global recorder.
-    
+
     Args:
         input_file: The .knda file being executed
         command_args: Command line arguments
         output_file: Optional output file path
-        
+
     Returns:
         session_id: Unique session identifier
     """
@@ -484,42 +484,42 @@ def _reset_global_recorder() -> None:
 class ReplayEngine:
     """
     Replays PersonalityContext RNG calls for exact execution reproduction.
-    
-    This class implements deterministic replay by intercepting RNG calls and 
+
+    This class implements deterministic replay by intercepting RNG calls and
     returning pre-recorded values in the exact sequence they were captured.
     """
-    
+
     def __init__(self, session: RecordingSession):
         self.session = session
         self.replaying = False
         self._call_index = 0
         self._lock = threading.Lock()
-        
+
         # Hook tracking
         self._original_methods: Dict[str, Any] = {}
         self._hooked = False
-        
+
         # Validation tracking
         self._mismatches: List[Dict[str, Any]] = []
-    
+
     def start_replay(self) -> str:
         """
         Start replaying the recorded session.
-        
+
         Returns:
             session_id: The ID of the session being replayed
         """
         if self.replaying:
             raise RuntimeError("Replay already in progress. Stop current replay first.")
-        
+
         # Import here to avoid circular import
         from kinda.personality import PersonalityContext
-        
+
         with self._lock:
             # Restore initial personality state
             personality = PersonalityContext.get_instance()
             initial_state = self.session.initial_personality
-            
+
             # Set personality to match recorded state
             if "mood" in initial_state:
                 personality.mood = initial_state["mood"]
@@ -527,37 +527,37 @@ class ReplayEngine:
                 personality.chaos_level = initial_state["chaos_level"]
             if "seed" in initial_state and initial_state["seed"] is not None:
                 personality.set_seed(initial_state["seed"])
-            
+
             # Install replay hooks
             self._install_replay_hooks()
-            
+
             self.replaying = True
             self._call_index = 0
             self._mismatches.clear()
-            
+
             return self.session.session_id
-    
+
     def stop_replay(self) -> Dict[str, Any]:
         """
         Stop replaying and return replay statistics.
-        
+
         Returns:
             Replay summary with statistics and any validation issues
         """
         if not self.replaying:
             raise RuntimeError("No replay session in progress")
-        
+
         with self._lock:
             # Remove hooks
             self._remove_replay_hooks()
-            
+
             self.replaying = False
-            
+
             # Generate replay summary
             total_calls = len(self.session.rng_calls)
             calls_replayed = self._call_index
             success_rate = (calls_replayed / total_calls * 100) if total_calls > 0 else 100
-            
+
             return {
                 "session_id": self.session.session_id,
                 "total_calls": total_calls,
@@ -565,53 +565,53 @@ class ReplayEngine:
                 "success_rate": success_rate,
                 "mismatches": self._mismatches.copy(),
                 "validation_issues": len(self._mismatches),
-                "replay_complete": calls_replayed == total_calls
+                "replay_complete": calls_replayed == total_calls,
             }
-    
+
     def _install_replay_hooks(self) -> None:
         """Install RNG method hooks for replay in PersonalityContext."""
         if self._hooked:
             return
-            
+
         from kinda.personality import PersonalityContext
-        
+
         # Get the instance to hook
         personality = PersonalityContext.get_instance()
-        
+
         # Hook the main RNG methods
-        rng_methods = ['random', 'randint', 'uniform', 'choice', 'gauss']
-        
+        rng_methods = ["random", "randint", "uniform", "choice", "gauss"]
+
         for method_name in rng_methods:
             if hasattr(personality, method_name):
                 original_method = getattr(personality, method_name)
                 self._original_methods[method_name] = original_method
-                
+
                 # Create replay hook
                 replay_method = self._create_replay_hook(method_name, original_method)
                 setattr(personality, method_name, replay_method)
-        
+
         self._hooked = True
-    
+
     def _remove_replay_hooks(self) -> None:
         """Remove RNG method hooks from PersonalityContext."""
         if not self._hooked:
             return
-            
+
         from kinda.personality import PersonalityContext
-        
+
         # Get the instance to unhook
         personality = PersonalityContext.get_instance()
-        
+
         # Restore original methods
         for method_name, original_method in self._original_methods.items():
             setattr(personality, method_name, original_method)
-        
+
         self._original_methods.clear()
         self._hooked = False
-    
+
     def _create_replay_hook(self, method_name: str, original_method):
         """Create a replay hook that returns pre-recorded values."""
-        
+
         def replay_method(*args, **kwargs):
             # Return pre-recorded value if we're actively replaying
             if self.replaying:
@@ -625,56 +625,69 @@ class ReplayEngine:
             else:
                 # Not replaying, use original method
                 return original_method(*args, **kwargs)
-            
+
         return replay_method
-    
+
     def _get_recorded_result(self, method_name: str, args: tuple, kwargs: dict) -> Any:
         """Get the next recorded result for this RNG call."""
-        
+
         with self._lock:
             # Check if we have more recorded calls
             if self._call_index >= len(self.session.rng_calls):
-                raise RuntimeError(f"Replay exhausted: no more recorded calls (index {self._call_index})")
-            
+                raise RuntimeError(
+                    f"Replay exhausted: no more recorded calls (index {self._call_index})"
+                )
+
             # Get the next recorded call
             recorded_call = self.session.rng_calls[self._call_index]
             self._call_index += 1
-            
+
             # Validate the call matches what we expect
             if recorded_call.method_name != method_name:
-                raise ValueError(f"Method mismatch: expected {recorded_call.method_name}, got {method_name}")
-            
+                raise ValueError(
+                    f"Method mismatch: expected {recorded_call.method_name}, got {method_name}"
+                )
+
             # Check arguments match (with some tolerance for floating point)
-            if not self._args_match(recorded_call.args, list(args), recorded_call.kwargs, dict(kwargs)):
+            if not self._args_match(
+                recorded_call.args, list(args), recorded_call.kwargs, dict(kwargs)
+            ):
                 # Log mismatch but continue with recorded result
                 self._log_replay_mismatch(
-                    method_name, args, kwargs, 
+                    method_name,
+                    args,
+                    kwargs,
                     (recorded_call.args, recorded_call.kwargs),
                     recorded_call.result,
-                    "Argument mismatch during replay"
+                    "Argument mismatch during replay",
                 )
-            
+
             return recorded_call.result
-    
-    def _args_match(self, recorded_args: List[Any], actual_args: List[Any], 
-                   recorded_kwargs: Dict[str, Any], actual_kwargs: Dict[str, Any]) -> bool:
+
+    def _args_match(
+        self,
+        recorded_args: List[Any],
+        actual_args: List[Any],
+        recorded_kwargs: Dict[str, Any],
+        actual_kwargs: Dict[str, Any],
+    ) -> bool:
         """Check if arguments match with tolerance for floating point values."""
-        
+
         # Check positional args
         if len(recorded_args) != len(actual_args):
             return False
-        
+
         for recorded, actual in zip(recorded_args, actual_args):
             if isinstance(recorded, float) and isinstance(actual, float):
                 if abs(recorded - actual) > 1e-10:  # Floating point tolerance
                     return False
             elif recorded != actual:
                 return False
-        
+
         # Check keyword args
         if set(recorded_kwargs.keys()) != set(actual_kwargs.keys()):
             return False
-        
+
         for key in recorded_kwargs:
             recorded_val = recorded_kwargs[key]
             actual_val = actual_kwargs[key]
@@ -683,13 +696,20 @@ class ReplayEngine:
                     return False
             elif recorded_val != actual_val:
                 return False
-        
+
         return True
-    
-    def _log_replay_mismatch(self, method_name: str, actual_args: tuple, actual_kwargs: dict,
-                           expected_args: Any, fallback_result: Any, reason: str) -> None:
+
+    def _log_replay_mismatch(
+        self,
+        method_name: str,
+        actual_args: tuple,
+        actual_kwargs: dict,
+        expected_args: Any,
+        fallback_result: Any,
+        reason: str,
+    ) -> None:
         """Log a mismatch between recorded and actual RNG calls."""
-        
+
         mismatch = {
             "call_index": self._call_index - 1,
             "method_name": method_name,
@@ -698,28 +718,28 @@ class ReplayEngine:
             "expected_args": expected_args,
             "fallback_result": fallback_result,
             "reason": reason,
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
-        
+
         self._mismatches.append(mismatch)
-    
+
     def get_replay_progress(self) -> Dict[str, Any]:
         """Get current replay progress information."""
-        
+
         if not self.replaying:
             return {"status": "not_replaying"}
-        
+
         total_calls = len(self.session.rng_calls)
         current_index = self._call_index
         progress_percent = (current_index / total_calls * 100) if total_calls > 0 else 100
-        
+
         return {
             "status": "replaying",
             "session_id": self.session.session_id,
             "current_call": current_index,
             "total_calls": total_calls,
             "progress_percent": progress_percent,
-            "mismatches": len(self._mismatches)
+            "mismatches": len(self._mismatches),
         }
 
 
@@ -730,10 +750,10 @@ _global_replay_engine: Optional[ReplayEngine] = None
 def start_replay(session: RecordingSession) -> str:
     """
     Convenience function to start replay with a global engine.
-    
+
     Args:
         session: The recorded session to replay
-        
+
     Returns:
         session_id: The ID of the session being replayed
     """
@@ -747,7 +767,7 @@ def stop_replay() -> Dict[str, Any]:
     global _global_replay_engine
     if _global_replay_engine is None:
         raise RuntimeError("No replay session to stop")
-    
+
     result = _global_replay_engine.stop_replay()
     _global_replay_engine = None  # Clear global instance
     return result
