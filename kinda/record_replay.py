@@ -79,7 +79,7 @@ class ExecutionRecorder:
 
     This class hooks into the PersonalityContext's random number generation
     to capture every decision point in a kinda program's execution.
-    
+
     Security Features:
     - Global recording state management prevents concurrent sessions
     - Hook integrity validation prevents bypass attacks
@@ -109,14 +109,14 @@ class ExecutionRecorder:
 
         Returns:
             session_id: Unique identifier for this recording session
-            
+
         Raises:
             RuntimeError: If recording is already in progress or if concurrent recording detected
         """
         # Global recording state protection
         with _recording_lock:
             global _global_recorder, _hook_validator_token
-            
+
             # Prevent concurrent recordings across all instances
             if _global_recorder is not None and _global_recorder.recording:
                 if _global_recorder is not self:
@@ -126,7 +126,7 @@ class ExecutionRecorder:
                     )
                 else:
                     raise RuntimeError("Recording already in progress. Stop current session first.")
-                    
+
             if self.recording:
                 raise RuntimeError("Recording already in progress. Stop current session first.")
 
@@ -167,7 +167,7 @@ class ExecutionRecorder:
 
             # Install hooks with security validation
             self._install_hooks()
-            
+
             # Register as the active global recorder
             _global_recorder = self
             _hook_validator_token = self._security_token
@@ -239,7 +239,7 @@ class ExecutionRecorder:
         for method_name in rng_methods:
             if hasattr(personality, method_name):
                 original_method = getattr(personality, method_name)
-                
+
                 # Check if method is already hooked by another recorder
                 method_id = f"{id(personality)}.{method_name}"
                 if method_id in _active_hooks:
@@ -247,9 +247,9 @@ class ExecutionRecorder:
                         f"Method {method_name} is already hooked by another recorder. "
                         "Concurrent recording sessions are not allowed for security reasons."
                     )
-                    
+
                 self._original_methods[method_name] = original_method
-                
+
                 # Create security checksum for the original method
                 method_checksum = hashlib.sha256(
                     str(id(original_method)).encode() + method_name.encode()
@@ -259,12 +259,12 @@ class ExecutionRecorder:
                 # Create hooked version with security token
                 hooked_method = self._create_hook(method_name, original_method, method_checksum)
                 setattr(personality, method_name, hooked_method)
-                
+
                 # Register active hook
                 _active_hooks[method_id] = {
                     "recorder_token": self._security_token,
                     "method_checksum": method_checksum,
-                    "original_method": original_method
+                    "original_method": original_method,
                 }
 
         self._hooked = True
@@ -278,7 +278,7 @@ class ExecutionRecorder:
 
         # Get the instance to unhook
         personality = PersonalityContext.get_instance()
-        
+
         global _active_hooks
 
         # Restore original methods and clear hook registry
@@ -290,10 +290,10 @@ class ExecutionRecorder:
                 if hook_info["recorder_token"] != self._security_token:
                     # Hook was tampered with - still restore but log warning
                     pass  # In production, this should log a security warning
-                    
+
                 # Remove from active hooks registry
                 del _active_hooks[method_id]
-            
+
             setattr(personality, method_name, original_method)
 
         self._original_methods.clear()
@@ -328,73 +328,74 @@ class ExecutionRecorder:
     def _validate_method_hook(self, method_name: str, expected_checksum: str) -> bool:
         """Validate that a hooked method hasn't been tampered with."""
         from kinda.personality import PersonalityContext
-        
+
         personality = PersonalityContext.get_instance()
         current_method = getattr(personality, method_name, None)
-        
+
         if current_method is None:
             return False
-            
+
         # Check if method has our security metadata
-        if not hasattr(current_method, '_kinda_hook_token'):
+        if not hasattr(current_method, "_kinda_hook_token"):
             return False
-            
+
         # Validate security token and checksum
         return (
-            current_method._kinda_hook_token == self._security_token and
-            current_method._kinda_hook_checksum == expected_checksum
+            current_method._kinda_hook_token == self._security_token
+            and current_method._kinda_hook_checksum == expected_checksum
         )
-    
+
     def _validate_hook_integrity(self) -> bool:
         """Validate the integrity of all installed hooks."""
         if not self._hooked:
             return True
-            
+
         for method_name, expected_checksum in self._hook_checksums.items():
             if not self._validate_method_hook(method_name, expected_checksum):
                 return False
-        
+
         # Validate global hook registry consistency
         global _active_hooks, _hook_validator_token
         if _hook_validator_token != self._security_token:
             return False
-            
+
         return True
-    
+
     def detect_and_prevent_hook_bypass(self) -> bool:
         """
         Actively detect and prevent hook bypass attempts.
-        
+
         This method should be called periodically during recording to detect
         if someone has bypassed our hooks by reassigning original methods.
-        
+
         Returns:
             True if hooks are intact, False if tampering detected
         """
         if not self.recording or not self._hooked:
             return True
-            
+
         from kinda.personality import PersonalityContext
+
         personality = PersonalityContext.get_instance()
-        
+
         # Check each hooked method to see if it's still our hook
         for method_name in self._original_methods.keys():
             current_method = getattr(personality, method_name, None)
-            
+
             # If the method doesn't have our security metadata, it's been bypassed
-            if not hasattr(current_method, '_kinda_hook_token'):
+            if not hasattr(current_method, "_kinda_hook_token"):
                 # Re-install our hook to prevent bypass
-                original_method = self._original_methods[method_name] 
+                original_method = self._original_methods[method_name]
                 expected_checksum = self._hook_checksums[method_name]
                 new_hook = self._create_hook(method_name, original_method, expected_checksum)
                 setattr(personality, method_name, new_hook)
-                
+
                 # Update global hooks registry
                 global _active_hooks
                 method_id = f"{id(personality)}.{method_name}"
                 if method_id in _active_hooks:
                     _active_hooks[method_id]["method_checksum"] = expected_checksum
-                
+
                 # Log security event (in production this should be logged properly)
                 # For now, we'll raise an exception to alert about the bypass attempt
                 raise RuntimeError(
@@ -402,12 +403,12 @@ class ExecutionRecorder:
                     "Malicious code attempted to restore original method to evade recording. "
                     "Hook has been re-installed for protection."
                 )
-                
+
         return True
 
     def _record_rng_call(self, method_name: str, args: tuple, kwargs: dict, result: Any) -> None:
         """Record a single RNG call with full context."""
-        
+
         # Security check: Validate hook integrity on every recording call
         if not self._validate_hook_integrity():
             raise RuntimeError(
@@ -580,14 +581,14 @@ class ExecutionRecorder:
 
         if not self.session:
             return {"status": "no_session", "message": "No recording session active"}
-            
+
         # Security validation: Check hook integrity when queried
         if self.recording and not self._validate_hook_integrity():
             return {
                 "status": "compromised",
                 "session_id": self.session.session_id,
                 "message": "SECURITY ALERT: Recording session integrity compromised!",
-                "warning": "Hook tampering detected - recording may be unreliable"
+                "warning": "Hook tampering detected - recording may be unreliable",
             }
 
         current_time = time.time()
@@ -614,7 +615,7 @@ _hook_validator_token: Optional[str] = None  # Security token for hook validatio
 def get_recorder() -> ExecutionRecorder:
     """Get or create the global ExecutionRecorder instance with security validation."""
     global _global_recorder
-    
+
     # Use the recording lock to prevent race conditions
     with _recording_lock:
         if _global_recorder is None:
@@ -645,7 +646,7 @@ def start_recording(
 def stop_recording() -> RecordingSession:
     """Stop recording with the global recorder and return the session."""
     global _global_recorder
-    
+
     with _recording_lock:
         if _global_recorder is None:
             raise RuntimeError("No recording session to stop")
@@ -655,41 +656,41 @@ def stop_recording() -> RecordingSession:
 def is_recording() -> bool:
     """Check if recording is currently active with security validation."""
     global _global_recorder, _hook_validator_token
-    
+
     with _recording_lock:
         if _global_recorder is None:
             return False
-            
+
         # Additional security check: validate hook integrity
         if _global_recorder.recording:
             # Quick integrity check without full validation (for performance)
             return _hook_validator_token == _global_recorder._security_token
-            
+
         return _global_recorder.recording
 
 
 def get_session_summary() -> Dict[str, Any]:
     """Get summary of current recording session with security validation."""
     global _global_recorder
-    
+
     with _recording_lock:
         if _global_recorder is None:
             return {"status": "no_session", "message": "No recording session active"}
-            
+
         # Validate session integrity before returning summary
         if _global_recorder.recording and not _global_recorder._validate_hook_integrity():
             return {
-                "status": "compromised", 
-                "message": "Recording session may have been compromised - hook integrity validation failed"
+                "status": "compromised",
+                "message": "Recording session may have been compromised - hook integrity validation failed",
             }
-            
+
         return _global_recorder.get_session_summary()
 
 
 def _reset_global_recorder() -> None:
     """Reset the global recorder instance. For testing only."""
     global _global_recorder, _hook_validator_token, _active_hooks
-    
+
     with _recording_lock:
         if _global_recorder is not None and _global_recorder.recording:
             # Force stop recording if active (for testing cleanup)
@@ -697,7 +698,7 @@ def _reset_global_recorder() -> None:
                 _global_recorder.stop_recording()
             except:
                 pass  # Ignore errors during cleanup
-                
+
         _global_recorder = None
         _hook_validator_token = None
         _active_hooks.clear()

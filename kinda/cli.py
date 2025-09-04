@@ -291,9 +291,11 @@ def setup_personality(mood: str, chaos_level: int = 5, seed: Optional[int] = Non
         if env_seed is not None:
             # Security: Sanitize environment variable input
             env_seed = env_seed.strip()
-            
+
             # Security: Check for suspicious patterns that might indicate injection attempts
-            if any(char in env_seed for char in ['$', '`', ';', '|', '&', '<', '>', '(', ')', '{', '}']):
+            if any(
+                char in env_seed for char in ["$", "`", ";", "|", "&", "<", ">", "(", ")", "{", "}"]
+            ):
                 safe_print(
                     f"[!] KINDA_SEED contains suspicious characters - ignoring for security reasons"
                 )
