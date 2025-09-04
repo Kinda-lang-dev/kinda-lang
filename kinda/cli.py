@@ -289,13 +289,30 @@ def setup_personality(mood: str, chaos_level: int = 5, seed: Optional[int] = Non
     if resolved_seed is None:
         env_seed = os.environ.get("KINDA_SEED")
         if env_seed is not None:
-            try:
-                resolved_seed = int(env_seed)
-            except ValueError:
+            # Security: Sanitize environment variable input
+            env_seed = env_seed.strip()
+            
+            # Security: Check for suspicious patterns that might indicate injection attempts
+            if any(char in env_seed for char in ['$', '`', ';', '|', '&', '<', '>', '(', ')', '{', '}']):
                 safe_print(
-                    f"[?] Invalid KINDA_SEED value '{env_seed}' - ignoring environment variable"
+                    f"[!] KINDA_SEED contains suspicious characters - ignoring for security reasons"
                 )
-                safe_print("[tip] KINDA_SEED must be an integer")
+                safe_print("[tip] KINDA_SEED must contain only digits and optional minus sign")
+            else:
+                try:
+                    # Additional security: Limit length to prevent potential DoS
+                    if len(env_seed) > 20:  # Reasonable limit for integer string
+                        safe_print(
+                            f"[!] KINDA_SEED value too long ({len(env_seed)} chars) - ignoring for security"
+                        )
+                        safe_print("[tip] KINDA_SEED must be a reasonable-length integer")
+                    else:
+                        resolved_seed = int(env_seed)
+                except ValueError:
+                    safe_print(
+                        f"[?] Invalid KINDA_SEED value '{env_seed}' - ignoring environment variable"
+                    )
+                    safe_print("[tip] KINDA_SEED must be an integer")
 
     # Validate and sanitize seed for security
     resolved_seed = validate_seed(resolved_seed)
