@@ -519,20 +519,44 @@ def find_welp_constructs(line: str):
                 self.end_pos = end
 
             def group(self, n=0):
-                if n == 0:
-                    return self.full_match
-                elif n == 1:
-                    return self.primary_expr
-                elif n == 2:
-                    return self.fallback_val
+                """Return the group(s) of the match."""
+                try:
+                    if n == 0:
+                        return self.full_match
+                    elif n == 1:
+                        return self.primary_expr
+                    elif n == 2:
+                        return self.fallback_val
+                    else:
+                        raise IndexError(f"No such group: {n}")
+                except AttributeError as e:
+                    raise IndexError(f"Invalid group access: {e}")
+
+            def groups(self):
+                """Return all groups as a tuple."""
+                return (self.primary_expr, self.fallback_val)
+
+            def start(self, group=0):
+                """Return start position of the match or group."""
+                if group == 0:
+                    return self.start_pos
                 else:
-                    raise IndexError("No such group")
+                    # For groups, return the start position relative to the match
+                    # This is a simplified implementation
+                    return self.start_pos
 
-            def start(self):
-                return self.start_pos
+            def end(self, group=0):
+                """Return end position of the match or group."""
+                if group == 0:
+                    return self.end_pos
+                else:
+                    # For groups, return the end position relative to the match
+                    # This is a simplified implementation
+                    return self.end_pos
 
-            def end(self):
-                return self.end_pos
+            def span(self, group=0):
+                """Return (start, end) positions of the match or group."""
+                return (self.start(group), self.end(group))
 
         full_match = line[expr_start:fallback_end]
         match_obj = WelpMatch(full_match, expr_before, fallback_value, expr_start, fallback_end)

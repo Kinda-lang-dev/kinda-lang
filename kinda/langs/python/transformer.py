@@ -141,11 +141,17 @@ def _transform_ish_constructs(line: str) -> str:
     for construct_type, match, start_pos, end_pos in reversed(ish_constructs):
         if construct_type == "ish_value":
             used_helpers.add("ish_value")
-            value = match.group(1)
-            replacement = f"ish_value({value})"
+            try:
+                value = match.group(1)
+                replacement = f"ish_value({value})"
+            except (IndexError, AttributeError):
+                continue  # Skip malformed matches
         elif construct_type == "ish_comparison":
-            left_val = match.group(1)
-            right_val = match.group(2)
+            try:
+                left_val = match.group(1)
+                right_val = match.group(2)
+            except (IndexError, AttributeError):
+                continue  # Skip malformed matches
 
             # CRITICAL FIX: Detect assignment vs comparison context
             stripped_line = line.strip()
@@ -192,9 +198,12 @@ def _transform_ish_constructs(line: str) -> str:
         elif construct_type == "ish_comparison_with_ish_value":
             used_helpers.add("ish_comparison")
             used_helpers.add("ish_value")
-            left_val = match.group(1)
-            right_val = match.group(2)
-            replacement = f"ish_comparison({left_val}, ish_value({right_val}))"
+            try:
+                left_val = match.group(1)
+                right_val = match.group(2)
+                replacement = f"ish_comparison({left_val}, ish_value({right_val}))"
+            except (IndexError, AttributeError):
+                continue  # Skip malformed matches
         else:
             continue  # Skip unknown constructs
 
@@ -215,14 +224,22 @@ def _transform_welp_constructs(line: str) -> str:
     for construct_type, match, start_pos, end_pos in reversed(welp_constructs):
         if construct_type == "welp":
             used_helpers.add("welp_fallback")
-            primary_expr = match.group(1).strip()
-            fallback_value = match.group(2).strip()
-            replacement = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
+            try:
+                primary_expr = match.group(1).strip()
+                fallback_value = match.group(2).strip()
+                
+                # CRITICAL FIX: Apply ish transformations to both primary expression and fallback value
+                primary_expr = _transform_ish_constructs(primary_expr)
+                fallback_value = _transform_ish_constructs(fallback_value)
+                
+                replacement = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
 
-            # Replace the matched text
-            transformed_line = (
-                transformed_line[:start_pos] + replacement + transformed_line[end_pos:]
-            )
+                # Replace the matched text
+                transformed_line = (
+                    transformed_line[:start_pos] + replacement + transformed_line[end_pos:]
+                )
+            except (IndexError, AttributeError):
+                continue  # Skip malformed matches
 
     return transformed_line
 
@@ -240,16 +257,49 @@ def transform_line(line: str) -> List[str]:
     # CRITICAL FIX: Check for main kinda constructs FIRST before inline transformations
     # This ensures that import constructs with ~welp are handled by their specific patterns
     key, groups = match_python_construct(stripped)
+    
+    # CRITICAL FIX: For welp constructs, prefer inline parsing if the line is complex
+    # This handles expressions like "total = (get_value() ~welp 10) + other_value"
+    if key == "welp":
+        # Check if this is a complex expression that should use inline parsing
+        primary_expr = groups[0].strip() if groups and groups[0] else ""
+        fallback_expr = groups[1].strip() if len(groups) > 1 and groups[1] else ""
+        
+        # If primary expression has complex operators, parentheses, or keywords, use inline parsing
+        is_complex_expr = any(op in primary_expr for op in ["(", ")", "+", "-", "*", "/", "=", "[", "]"])
+        is_complex_fallback = any(op in fallback_expr for op in ["(", ")", "+", "-", "*", "/", "=", "[", "]"])
+        
+        # Also check for Python keywords that indicate inline parsing should be used
+        starts_with_keyword = any(primary_expr.strip().startswith(kw + " ") for kw in 
+                                 ["if", "elif", "while", "for", "return", "yield", "assert", "del"])
+        ends_with_colon = fallback_expr.strip().endswith(":")
+        
+        if is_complex_expr or is_complex_fallback or starts_with_keyword or ends_with_colon:
+            # Use inline parsing instead of main construct
+            key = None
+            groups = None
+    
     if key:
         # For main constructs, apply inline transformations to the groups
         # This handles cases like "value ~= 100~ish" where we need ish_value inside fuzzy_assign
-        if key not in ["kinda_import", "maybe_import", "welp"]:
-            # Apply inline transformations to each group
+        if key not in ["kinda_import", "maybe_import"]:
+            # Apply inline transformations to each group recursively
             processed_groups = []
             for group in groups:
                 if group is not None:
-                    group_transformed = _transform_ish_constructs(group)
-                    processed_groups.append(group_transformed)
+                    # Apply ish transformations (welp constructs handle their own ish transforms)
+                    if key == "welp":
+                        # For welp constructs, only apply ish to fallback value
+                        if len(processed_groups) == 1:  # This is the fallback value
+                            group_transformed = _transform_ish_constructs(group)
+                            processed_groups.append(group_transformed)
+                        else:
+                            processed_groups.append(group)
+                    else:
+                        # For other constructs, apply both ish and welp transformations
+                        group_ish_transformed = _transform_ish_constructs(group)
+                        group_fully_transformed = _transform_welp_constructs(group_ish_transformed)
+                        processed_groups.append(group_fully_transformed)
                 else:
                     processed_groups.append(group)
             groups = tuple(processed_groups)
@@ -269,95 +319,116 @@ def transform_line(line: str) -> List[str]:
             return [original_line]
 
     if key == "kinda_int":
-        var, val = groups
-        used_helpers.add("kinda_int")
-        transformed_code = f"{var} = kinda_int({val})"
+        if len(groups) >= 2:
+            var, val = groups[0], groups[1]
+            used_helpers.add("kinda_int")
+            transformed_code = f"{var} = kinda_int({val})"
+        else:
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "kinda_binary":
-        if len(groups) == 2 and groups[1]:  # Custom probabilities provided
-            var, probs = groups
-            used_helpers.add("kinda_binary")
-            transformed_code = f"{var} = kinda_binary({probs})"
-        else:  # Default probabilities
+        if len(groups) >= 1:
             var = groups[0]
-            used_helpers.add("kinda_binary")
-            transformed_code = f"{var} = kinda_binary()"
+            if len(groups) >= 2 and groups[1]:  # Custom probabilities provided
+                probs = groups[1]
+                used_helpers.add("kinda_binary")
+                transformed_code = f"{var} = kinda_binary({probs})"
+            else:  # Default probabilities
+                used_helpers.add("kinda_binary")
+                transformed_code = f"{var} = kinda_binary()"
+        else:
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "sorta_print":
-        (expr,) = groups
-        used_helpers.add("sorta_print")
-        transformed_code = f"sorta_print({expr})"
+        if len(groups) >= 1:
+            expr = groups[0]
+            used_helpers.add("sorta_print")
+            transformed_code = f"sorta_print({expr})"
+        else:
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "sometimes":
         used_helpers.add("sometimes")
-        cond = groups[0].strip() if groups and groups[0] else ""
+        cond = groups[0].strip() if groups and len(groups) > 0 and groups[0] else ""
         transformed_code = f"if sometimes({cond}):" if cond else "if sometimes():"
 
     elif key == "maybe":
         used_helpers.add("maybe")
-        cond = groups[0].strip() if groups and groups[0] else ""
+        cond = groups[0].strip() if groups and len(groups) > 0 and groups[0] else ""
         transformed_code = f"if maybe({cond}):" if cond else "if maybe():"
 
     elif key == "fuzzy_reassign":
-        var, val = groups
-        used_helpers.add("fuzzy_assign")
-        transformed_code = f"{var} = fuzzy_assign('{var}', {val})"
+        if len(groups) >= 2:
+            var, val = groups[0], groups[1]
+            used_helpers.add("fuzzy_assign")
+            transformed_code = f"{var} = fuzzy_assign('{var}', {val})"
+        else:
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "kinda_import":
         # Handle kinda import with optional alias
-        if len(groups) == 2 and groups[1]:  # Has alias
-            module_name, alias = groups
-            used_helpers.add("kinda_import")
-            transformed_code = f"{alias} = kinda_import('{module_name}', alias='{alias}')"
-        else:  # No alias
+        if len(groups) >= 1:
             module_name = groups[0]
-            # Extract the simple module name for variable assignment
-            var_name = module_name.split(".")[-1]
-            used_helpers.add("kinda_import")
-            transformed_code = f"{var_name} = kinda_import('{module_name}')"
+            if len(groups) >= 2 and groups[1]:  # Has alias
+                alias = groups[1]
+                used_helpers.add("kinda_import")
+                transformed_code = f"{alias} = kinda_import('{module_name}', alias='{alias}')"
+            else:  # No alias
+                # Extract the simple module name for variable assignment
+                var_name = module_name.split(".")[-1]
+                used_helpers.add("kinda_import")
+                transformed_code = f"{var_name} = kinda_import('{module_name}')"
+        else:
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "maybe_import":
         # Handle maybe import with optional alias and fallback
-        module_name = groups[0]
-        alias = groups[1] if len(groups) > 1 and groups[1] else None
-        fallback = groups[2] if len(groups) > 2 and groups[2] else None
+        if len(groups) >= 1:
+            module_name = groups[0]
+            alias = groups[1] if len(groups) > 1 and groups[1] else None
+            fallback = groups[2] if len(groups) > 2 and groups[2] else None
 
-        used_helpers.add("maybe_import")
+            used_helpers.add("maybe_import")
 
-        if alias:
-            if fallback:
-                transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}', fallback_module='{fallback.strip()}')"
+            if alias:
+                if fallback:
+                    transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}', fallback_module='{fallback.strip()}')"
+                else:
+                    transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}')"
             else:
-                transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}')"
+                var_name = module_name.split(".")[-1]
+                if fallback:
+                    transformed_code = f"{var_name} = maybe_import('{module_name}', fallback_module='{fallback.strip()}')"
+                else:
+                    transformed_code = f"{var_name} = maybe_import('{module_name}')"
         else:
-            var_name = module_name.split(".")[-1]
-            if fallback:
-                transformed_code = f"{var_name} = maybe_import('{module_name}', fallback_module='{fallback.strip()}')"
-            else:
-                transformed_code = f"{var_name} = maybe_import('{module_name}')"
+            transformed_code = stripped  # fallback for malformed construct
 
     elif key == "welp":
         # Handle welp construct
-        primary_expr = groups[0].strip()
-        fallback_value = groups[1].strip()
-        used_helpers.add("welp_fallback")
+        if len(groups) >= 2:
+            primary_expr = groups[0].strip()
+            fallback_value = groups[1].strip()
+            used_helpers.add("welp_fallback")
 
-        # Check if this is an assignment context (var = expr ~welp fallback)
-        if "=" in primary_expr and not primary_expr.strip().startswith("="):
-            # Extract variable name and expression
-            parts = primary_expr.split("=", 1)
-            if len(parts) == 2:
-                var_name = parts[0].strip()
-                expr_part = parts[1].strip()
-                transformed_code = (
-                    f"{var_name} = welp_fallback(lambda: {expr_part}, {fallback_value})"
-                )
+            # Check if this is an assignment context (var = expr ~welp fallback)
+            if "=" in primary_expr and not primary_expr.strip().startswith("="):
+                # Extract variable name and expression
+                parts = primary_expr.split("=", 1)
+                if len(parts) == 2:
+                    var_name = parts[0].strip()
+                    expr_part = parts[1].strip()
+                    transformed_code = (
+                        f"{var_name} = welp_fallback(lambda: {expr_part}, {fallback_value})"
+                    )
+                else:
+                    # Fallback to original behavior
+                    transformed_code = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
             else:
-                # Fallback to original behavior
+                # Not an assignment, use original behavior
                 transformed_code = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
         else:
-            # Not an assignment, use original behavior
-            transformed_code = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
+            transformed_code = stripped  # fallback for malformed construct
 
     else:
         transformed_code = stripped  # fallback

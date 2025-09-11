@@ -44,6 +44,14 @@ def generate_runtime(output_dir: Path):
         "# Auto-generated fuzzy runtime for Python\n",
         "import random\n",
         "env = {}\n\n",
+        "# Common error handling utilities to reduce code duplication\n",
+        "def _print_type_error(context, value, expected_type='number'):\n",
+        "    print(f'[?] {context} got something weird: {repr(value)}')\n",
+        "    print(f'[tip] Expected a {expected_type} but got {type(value).__name__}')\n\n",
+        "def _print_general_error(context, error):\n",
+        "    print(f'[shrug] {context} kinda failed: {error}')\n\n",
+        "def _print_fallback_message(message):\n",
+        "    print(f'[tip] {message}')\n\n",
     ]
 
     # Add default runtime implementations
@@ -78,16 +86,14 @@ def generate_runtime(output_dir: Path):
         )
         lines.append("env['sorta_print'] = sorta_print\n\n")
     if "sometimes" not in already_added:
-        lines.append(
-            "def sometimes():\n"
-            "    return random.random() < 0.5\n"
-        )
+        lines.append("def sometimes():\n" "    return random.random() < 0.5\n")
         lines.append("env['sometimes'] = sometimes\n\n")
 
     # Write full runtime file
     runtime_file = output_dir / "fuzzy.py"
     # Generate runtime silently - no debug spam
-    runtime_file.write_text("".join(lines), encoding='utf-8')
+    runtime_file.write_text("".join(lines), encoding="utf-8")
+
 
 if __name__ == "__main__":
     import argparse
