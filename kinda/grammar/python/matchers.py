@@ -7,7 +7,7 @@ from kinda.grammar.python.constructs import KindaPythonConstructs
 _SORTA_PRINT_PATTERN = re.compile(r'^\s*~sorta\s+print\s*\(')
 _ISH_VALUE_PATTERN = re.compile(r'\b(\d+(?:\.\d+)?)\s*~ish')
 _ISH_COMPARISON_PATTERN = re.compile(r'(\w+)\s*~ish\s+(\w+)')
-_WELP_PATTERN = re.compile(r'([^~"\']*)\s*~welp\s+([^\n]+)')
+# Removed broken lookbehind pattern - welp filtering now handled in transformer logic
 _STRING_DELIMITERS = re.compile(r'["\']{1,3}')
 
 
@@ -150,10 +150,22 @@ def _parse_conditional_arguments(line: str, construct_name: str):
 def match_python_construct(line: str):
     """
     Enhanced Python construct matcher with robust parsing for all constructs.
+    Priority order: import constructs first, then others, welp last.
     """
-    # Clean matching - no debug spam
+    # PRIORITY 1: Check import constructs first (they have complex patterns with ~welp)
+    for key in ["kinda_import", "maybe_import"]:
+        if key in KindaPythonConstructs:
+            data = KindaPythonConstructs[key]
+            pattern = data["pattern"]
+            match = pattern.match(line)
+            if match:
+                return key, match.groups()
+    
+    # PRIORITY 2: Check other specific constructs
     for key, data in KindaPythonConstructs.items():
-        if key == "sorta_print":
+        if key in ["kinda_import", "maybe_import", "welp"]:
+            continue  # Skip - already handled or handled last
+        elif key == "sorta_print":
             # Use enhanced sorta_print parsing
             content = _parse_sorta_print_arguments(line)
             if content is not None:
@@ -168,6 +180,14 @@ def match_python_construct(line: str):
             match = pattern.match(line)
             if match:
                 return key, match.groups()
+    
+    # PRIORITY 3: Check welp last (it's very general and can match parts of other constructs)
+    if "welp" in KindaPythonConstructs:
+        data = KindaPythonConstructs["welp"]
+        pattern = data["pattern"]
+        match = pattern.match(line)
+        if match:
+            return "welp", match.groups()
 
     return None, None
 
@@ -397,6 +417,14 @@ def find_welp_constructs(line: str):
             check_start = max(0, expr_start - 10)
             prefix = line[check_start:expr_start].strip()
             if prefix.endswith('~sorta'):
+                continue
+        
+        # Check if this is part of a ~maybe import construct
+        if 'import' in expr_before:
+            # Look further back to see if there's ~maybe
+            check_start = max(0, expr_start - 15)
+            prefix = line[check_start:expr_start].strip()
+            if prefix.endswith('~maybe'):
                 continue
         
         # Find the fallback value after ~welp

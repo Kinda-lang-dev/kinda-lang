@@ -215,17 +215,31 @@ def transform_line(line: str) -> List[str]:
     if stripped.startswith("#"):
         return [original_line]
 
-    # Check for inline constructs in a single pass for efficiency
-    # First check for inline ~ish constructs
-    ish_transformed_line = _transform_ish_constructs(line)
-    
-    # Then check for inline ~welp constructs
-    welp_transformed_line = _transform_welp_constructs(ish_transformed_line)
-    
-    # Then check for main kinda constructs on the (potentially transformed) line
-    stripped_for_matching = welp_transformed_line.strip()
-    key, groups = match_python_construct(stripped_for_matching)
-    if not key:
+    # CRITICAL FIX: Check for main kinda constructs FIRST before inline transformations
+    # This ensures that import constructs with ~welp are handled by their specific patterns
+    key, groups = match_python_construct(stripped)
+    if key:
+        # For main constructs, apply inline transformations to the groups
+        # This handles cases like "value ~= 100~ish" where we need ish_value inside fuzzy_assign
+        if key not in ["kinda_import", "maybe_import", "welp"]:
+            # Apply inline transformations to each group
+            processed_groups = []
+            for group in groups:
+                if group is not None:
+                    group_transformed = _transform_ish_constructs(group)
+                    processed_groups.append(group_transformed)
+                else:
+                    processed_groups.append(group)
+            groups = tuple(processed_groups)
+        # Continue to main construct handling below
+    else:
+        # No main construct found, check for inline constructs
+        # First check for inline ~ish constructs
+        ish_transformed_line = _transform_ish_constructs(line)
+        
+        # Then check for inline ~welp constructs
+        welp_transformed_line = _transform_welp_constructs(ish_transformed_line)
+        
         # If no main construct found but transforms were applied, return the transformed line
         if welp_transformed_line != line:
             return [welp_transformed_line]
@@ -266,13 +280,67 @@ def transform_line(line: str) -> List[str]:
         var, val = groups
         used_helpers.add("fuzzy_assign")
         transformed_code = f"{var} = fuzzy_assign('{var}', {val})"
+    
+    elif key == "kinda_import":
+        # Handle kinda import with optional alias
+        if len(groups) == 2 and groups[1]:  # Has alias
+            module_name, alias = groups
+            used_helpers.add("kinda_import")
+            transformed_code = f"{alias} = kinda_import('{module_name}', alias='{alias}')"
+        else:  # No alias
+            module_name = groups[0]
+            # Extract the simple module name for variable assignment
+            var_name = module_name.split('.')[-1]
+            used_helpers.add("kinda_import")
+            transformed_code = f"{var_name} = kinda_import('{module_name}')"
+    
+    elif key == "maybe_import":
+        # Handle maybe import with optional alias and fallback
+        module_name = groups[0]
+        alias = groups[1] if len(groups) > 1 and groups[1] else None
+        fallback = groups[2] if len(groups) > 2 and groups[2] else None
+        
+        used_helpers.add("maybe_import")
+        
+        if alias:
+            if fallback:
+                transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}', fallback_module='{fallback.strip()}')"
+            else:
+                transformed_code = f"{alias} = maybe_import('{module_name}', alias='{alias}')"
+        else:
+            var_name = module_name.split('.')[-1]
+            if fallback:
+                transformed_code = f"{var_name} = maybe_import('{module_name}', fallback_module='{fallback.strip()}')"
+            else:
+                transformed_code = f"{var_name} = maybe_import('{module_name}')"
+    
+    elif key == "welp":
+        # Handle welp construct
+        primary_expr = groups[0].strip()
+        fallback_value = groups[1].strip()
+        used_helpers.add("welp_fallback")
+        
+        # Check if this is an assignment context (var = expr ~welp fallback)
+        if '=' in primary_expr and not primary_expr.strip().startswith('='):
+            # Extract variable name and expression
+            parts = primary_expr.split('=', 1)
+            if len(parts) == 2:
+                var_name = parts[0].strip()
+                expr_part = parts[1].strip()
+                transformed_code = f"{var_name} = welp_fallback(lambda: {expr_part}, {fallback_value})"
+            else:
+                # Fallback to original behavior
+                transformed_code = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
+        else:
+            # Not an assignment, use original behavior
+            transformed_code = f"welp_fallback(lambda: {primary_expr}, {fallback_value})"
 
     else:
         transformed_code = stripped  # fallback
 
     # Debug removed for clean UX
 
-    return [welp_transformed_line.replace(stripped_for_matching, transformed_code)]
+    return [original_line.replace(stripped, transformed_code)]
 
 
 class KindaParseError(Exception):
@@ -363,13 +431,15 @@ def transform_file(path: Path, target_language="python") -> str:
 def _validate_conditional_syntax(line: str, line_number: int, file_path: str) -> bool:
     """Validate ~sometimes and ~maybe syntax with helpful error messages"""
     if line.startswith("~sometimes"):
-        if "(" not in line:
+        # Check if this is a conditional block, not another construct
+        if not line.startswith("~sometimes(") and "(" not in line:
             raise KindaParseError(
                 "~sometimes needs parentheses. Try: ~sometimes() or ~sometimes(condition)",
                 line_number, line, file_path
             )
     elif line.startswith("~maybe"):
-        if "(" not in line:
+        # Check if this is a conditional block (~maybe), not an import construct (~maybe import)
+        if not line.startswith("~maybe import") and "(" not in line:
             raise KindaParseError(
                 "~maybe needs parentheses. Try: ~maybe() or ~maybe(condition)",
                 line_number, line, file_path
