@@ -63,9 +63,9 @@
   - **Task 2**: Framework for Construct Composition Development (~2 weeks)
   - **Task 3**: ~ish Patterns Implementation using ~kinda float + tolerance (~2 weeks)  
   - **Task 4**: Documentation & Examples for Construct Composition (~1-2 weeks)
-- 🎲 **EPIC #125: PROBABILISTIC CONTROL FLOW CONSTRUCTS** - Complete fuzzy programming paradigm (User HIGH Priority) - 🚀 **NEW HIGH PRIORITY**
-  - **Task 1**: Core Loop Constructs (~sometimes_while, ~maybe_for) (~2-3 weeks)
-  - **Task 2**: Repetition Constructs (~kinda_repeat, ~eventually_until) (~2-3 weeks)  
+- 🎲 **EPIC #125: PROBABILISTIC CONTROL FLOW CONSTRUCTS** - Complete fuzzy programming paradigm (User HIGH Priority) - ✅ **TASK 1 COMPLETED**
+  - **Task 1**: Core Loop Constructs (~sometimes_while, ~maybe_for) - ✅ **COMPLETED**
+  - **Task 2**: Repetition Constructs (~kinda_repeat, ~eventually_until) - 🚀 **READY FOR ASSIGNMENT**
   - **Task 3**: Advanced Integration & Optimization (~1-2 weeks)
   - **Task 4**: Documentation & Real-world Examples (~1 week)
 - **PARALLEL DEVELOPMENT**: Epic #124 and Epic #125 run simultaneously with coordinated development streams
@@ -203,6 +203,12 @@
 8. **Task 2**: 🔁 Repetition Constructs (~kinda_repeat, ~eventually_until) - Fuzzy repetition and statistical termination
 9. **Task 3**: ⚙️ Advanced Integration & Optimization - Performance optimization and cross-construct compatibility
 10. **Task 4**: 📘 Documentation & Real-world Examples - Comprehensive probabilistic control flow guide
+
+**🚀 HIGH PRIORITY (v0.5.0 Epic #124 - Construct Self-definition):**
+5. **Task 1**: 🏗️ Core ~sorta Conditional Implementation - Build ~sorta from ~sometimes + ~maybe + personality
+6. **Task 2**: 🔧 Framework for Construct Composition Development - Meta-programming infrastructure
+7. **Task 3**: 🎯 ~ish Patterns Implementation - Build ~ish behaviors from ~kinda float + tolerance  
+8. **Task 4**: 📖 Documentation & Examples for Construct Composition - Complete implementation showcase
 
 **🟡 MEDIUM PRIORITY (User-Aligned Features):**
 11. **Issue #116**: 🌍 Real-world Application Examples (Epic #76.3) - Aligns with "practical use cases"
@@ -348,4 +354,4 @@ This clarification makes the strategic direction MORE focused and achievable, pe
 - **v0.4.0 SUCCESS**: All core developer experience fundamentals delivered as planned
 
 ---
-*Last Updated: 2025-09-10 by Kinda-Lang Project Manager - DUAL EPIC STRATEGY ACTIVATED - Epic #124 & Epic #125 parallel development for v0.5.0 "Complete Probabilistic Programming" - Strategic pivot based on Architect Agent analysis*
+*Last Updated: 2025-09-10 by Kinda-Lang Project Manager - Epic #125 Task 1 COMPLETED: Core Loop Constructs delivered. Dual Epic Strategy in effect - parallel development for v0.5.0 "Complete Probabilistic Programming"*
